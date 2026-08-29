@@ -1841,7 +1841,7 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
   function buildWhatsAppMessage(client) {
     return (
       `Hola ${client.cliente}, te comparto tu estado de cartera con Inssumos Sotexco. ` +
-      `Saldo total: ${fmtMoney(client.total)}. Cualquier inquietud con gusto te ayudo.`
+      `*Saldo vencido: ${fmtMoney(client.vencido)}*. *Saldo total: ${fmtMoney(client.total)}*. Cualquier inquietud con gusto te ayudo.`
     );
   }
 
