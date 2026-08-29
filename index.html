@@ -1274,9 +1274,7 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
       waBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (!waLink) return;
-        generateSinglePDF(c);
-        window.open(waLink, "_blank");
-        toast(`Se descargó el PDF de ${c.cliente} y se abrió WhatsApp. Adjúntalo en la conversación.`);
+        shareToWhatsAppOrFallback(c, buildWhatsAppMessage(c), waLink);
       });
       tbody.appendChild(tr);
 
@@ -1363,7 +1361,7 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
   // Resumen ejecutivo semanal — un PDF con todas las gestiones de cobro
   // registradas en los últimos 7 días, para imprimir o revisar rápido.
   // ---------------------------------------------------------------------
-  function generarResumenSemanal() {
+  async function generarResumenSemanal() {
     if (typeof window.jspdf === "undefined") {
       toast("No se pudo cargar la librería de PDF. Verifica tu conexión a internet.", true);
       return;
@@ -1563,7 +1561,7 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
       });
     }
 
-    doc.save(`Resumen_Gestion_Semana_${todayISO()}.pdf`);
+    await shareOrDownloadPDF(doc, `Resumen_Gestion_Semana_${todayISO()}.pdf`, "Resumen semanal de gestión de cobro");
   }
 
   // ---------------------------------------------------------------------
@@ -1895,12 +1893,11 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
     document.getElementById("wa-queue-overlay").style.display = "flex";
   }
 
-  function waQueueSendCurrent() {
+  async function waQueueSendCurrent() {
     const c = waQueue[waQueueIndex];
     if (!c) return;
     const mensaje = document.getElementById("wa-queue-message").value;
-    generateSinglePDF(c);
-    window.open(buildWhatsAppLink(c, mensaje), "_blank");
+    await shareToWhatsAppOrFallback(c, mensaje, buildWhatsAppLink(c, mensaje));
     waQueueIndex++;
     renderWaQueueStep();
   }
@@ -2095,15 +2092,108 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
     return doc;
   }
 
-  function generateSinglePDF(client) {
+  // ---------------------------------------------------------------------
+  // Compartir o descargar — usa el share sheet nativo del celular cuando
+  // está disponible (requiere HTTPS; no funciona abriendo el archivo
+  // directo desde el disco, solo una vez publicada la herramienta con un
+  // link real). En computador, o si el navegador no lo soporta, cae
+  // automáticamente en la descarga de siempre — no rompe nada.
+  // ---------------------------------------------------------------------
+  async function shareOrDownloadBlob(blob, filename, mimeType, shareTitle, shareText) {
+    let motivoFallback = "";
+    try {
+      if (navigator.canShare) {
+        const file = new File([blob], filename, { type: mimeType });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: shareTitle, text: shareText || undefined });
+          return true;
+        }
+        motivoFallback = "este navegador no admite compartir este tipo de archivo";
+      } else {
+        motivoFallback = "este navegador no tiene la función de compartir (¿lo abriste desde dentro de otra app, como WhatsApp o Notas? intenta 'Abrir en Safari')";
+      }
+    } catch (e) {
+      if (e && e.name === "AbortError") return false; // el usuario cerró el share sheet, no es un error
+      console.error("Error al compartir, se intenta descargar en su lugar:", e);
+      motivoFallback = `no se pudo abrir para compartir (${e && e.name ? e.name : "error desconocido"})`;
+    }
+    if (motivoFallback) toast(`Se descargó el PDF en su lugar: ${motivoFallback}.`, true);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return true;
+  }
+
+  async function shareOrDownloadPDF(doc, filename, shareTitle, shareText) {
+    return shareOrDownloadBlob(doc.output("blob"), filename, "application/pdf", shareTitle, shareText);
+  }
+
+  async function generateSinglePDF(client) {
     try {
       const doc = buildClientPDF(client, currentFechaReporte());
       const fname = `Cartera_${slug(client.cliente)}_${client.cc || "SC"}.pdf`;
-      doc.save(fname);
+      await shareOrDownloadPDF(doc, fname, `Estado de cartera - ${client.cliente}`);
     } catch (e) {
       console.error(e);
       toast("No se pudo generar el PDF de " + client.cliente + ".", true);
     }
+  }
+
+  // Botón de WhatsApp: en celular (con HTTPS y share sheet disponible), el
+  // PDF se comparte ya adjunto — el vendedor solo elige WhatsApp y el chat
+  // del cliente. En computador, o si no hay soporte, cae en lo de siempre:
+  // descargar el PDF y abrir la conversación para adjuntarlo a mano.
+  async function shareToWhatsAppOrFallback(client, mensaje, waLink) {
+    let doc;
+    try {
+      doc = buildClientPDF(client, currentFechaReporte());
+    } catch (e) {
+      // Si el PDF no se pudo generar (ej. sin internet para cargar la
+      // librería), igual abrimos WhatsApp — mejor eso que dejar al
+      // vendedor sin poder escribirle al cliente por este error aparte.
+      console.error(e);
+      window.open(waLink, "_blank");
+      toast(`No se pudo generar el PDF de ${client.cliente}, pero se abrió WhatsApp.`, true);
+      return;
+    }
+    const fname = `Cartera_${slug(client.cliente)}_${client.cc || "SC"}.pdf`;
+    const blob = doc.output("blob");
+    let motivoFallback = "";
+
+    try {
+      if (navigator.canShare) {
+        const file = new File([blob], fname, { type: "application/pdf" });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: `Estado de cartera - ${client.cliente}`, text: mensaje });
+          toast(`Elige WhatsApp y el chat de ${client.cliente} para enviarlo — ya va con el PDF adjunto.`);
+          return;
+        }
+        motivoFallback = "este navegador no admite compartir un PDF";
+      } else {
+        motivoFallback = "este navegador no tiene la función de compartir (¿lo abriste desde dentro de otra app? intenta 'Abrir en Safari')";
+      }
+    } catch (e) {
+      if (e && e.name === "AbortError") return; // el vendedor cerró el share sheet, no es un error
+      console.error("Error al compartir por WhatsApp, se usa el modo de siempre:", e);
+      motivoFallback = `no se pudo abrir para compartir (${e && e.name ? e.name : "error desconocido"})`;
+    }
+
+    // Fallback: computador, o navegador sin soporte de share con archivos.
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    window.open(waLink, "_blank");
+    toast(`Se descargó el PDF de ${client.cliente} y se abrió WhatsApp (${motivoFallback}). Adjúntalo en la conversación.`, true);
   }
 
   async function generateAllVisiblePDFs() {
@@ -2117,7 +2207,7 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
 
     try {
       if (list.length === 1) {
-        generateSinglePDF(list[0]);
+        await generateSinglePDF(list[0]);
         return;
       }
 
@@ -2139,14 +2229,13 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
       }
       btn.textContent = "Comprimiendo...";
       const zipBlob = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Carteras_${todayISO()}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      await shareOrDownloadBlob(
+        zipBlob,
+        `Carteras_${todayISO()}.zip`,
+        "application/zip",
+        "Estados de cartera",
+        `Estados de cartera de ${list.length} clientes`
+      );
 
       toast(`Se generaron ${list.length} PDF en un archivo ZIP.`);
     } catch (e) {
