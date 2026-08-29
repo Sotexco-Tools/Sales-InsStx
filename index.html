@@ -440,6 +440,9 @@
     table.clients thead{display:none;}
     table.clients tbody tr{display:flex;flex-direction:column;padding:10px 14px;}
     table.clients td{padding:4px 0;}
+    .gestion-section-inline{flex-direction:column;align-items:stretch;gap:12px;}
+    .gestion-section-inline > div{width:100%;}
+    #gestion-guardar{width:100%;padding:12px 16px;}
   }
 </style>
 </head>
@@ -1256,8 +1259,8 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
         <td class="num"><strong>${fmtMoney(c.total)}</strong></td>
         <td class="row-actions">
           <button class="btn btn-row-gestion" title="Gestión de cobro">${gestionIcon()}</button>
-          <button class="btn btn-row-pdf" data-key="${escapeHtml(key)}" title="Generar PDF">${pdfIcon()}</button>
-          <button class="btn btn-row-wa" ${waLink ? "" : "disabled"} title="${waLink ? "Enviar por WhatsApp" : "Sin celular válido en el archivo"}">${waIcon()}</button>
+          <button class="btn btn-row-pdf" data-key="${escapeHtml(key)}" title="Descargar PDF">${printerIcon()}</button>
+          <button class="btn btn-row-wa" ${waLink ? "" : "disabled"} title="${waLink ? "Compartir por WhatsApp" : "Sin celular válido en el archivo"}">${waIcon()}</button>
         </td>
       `;
       tr.addEventListener("click", (ev) => {
@@ -1271,7 +1274,7 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
       });
       tr.querySelector(".btn-row-pdf").addEventListener("click", (ev) => {
         ev.stopPropagation();
-        generateSinglePDF(c);
+        downloadClientPDF(c);
       });
       const waBtn = tr.querySelector(".btn-row-wa");
       waBtn.addEventListener("click", (ev) => {
@@ -1329,7 +1332,11 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
   // WhatsApp
   // ---------------------------------------------------------------------
   function waIcon() {
-    return `<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" style="vertical-align:-3px;"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.39 1.26 4.81L2 22l5.41-1.42a9.87 9.87 0 0 0 4.63 1.18h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.13-2.9-7C17.17 3.03 14.69 2 12.04 2Zm5.8 14.14c-.24.68-1.4 1.3-1.94 1.37-.5.07-1.05.1-3.05-.66-2.56-.98-4.24-3.54-4.37-3.71-.13-.17-1.05-1.39-1.05-2.65s.66-1.87.9-2.13c.24-.26.51-.32.68-.32h.5c.16 0 .38-.06.6.45.24.57.8 1.98.87 2.13.07.14.11.31.02.5-.08.19-.13.3-.26.46-.13.16-.27.35-.39.47-.13.13-.26.27-.11.53.15.26.68 1.12 1.46 1.81 1 .89 1.85 1.17 2.11 1.3.26.13.42.11.57-.06.16-.18.66-.77.84-1.03.18-.26.35-.22.6-.13.24.09 1.55.73 1.82.86.26.13.44.19.5.3.06.11.06.62-.18 1.3Z"/></svg>`;
+    // Ícono de "compartir" (no el logo de WhatsApp): en celular este botón
+    // abre el share sheet del sistema — puede terminar en WhatsApp o en
+    // cualquier otra app que el vendedor elija ahí. El fondo verde se deja
+    // igual para que siga asociándose con WhatsApp de un vistazo.
+    return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>`;
   }
 
   // ---------------------------------------------------------------------
@@ -1352,8 +1359,8 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
     return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></svg>`;
   }
 
-  function pdfIcon() {
-    return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9.5 14.5 12 12l2.5 2.5"/></svg>`;
+  function printerIcon() {
+    return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>`;
   }
 
   function gestionIcon() {
@@ -2146,6 +2153,20 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
       const doc = buildClientPDF(client, currentFechaReporte());
       const fname = `Cartera_${slug(client.cliente)}_${client.cc || "SC"}.pdf`;
       await shareOrDownloadPDF(doc, fname);
+    } catch (e) {
+      console.error(e);
+      toast("No se pudo generar el PDF de " + client.cliente + ".", true);
+    }
+  }
+
+  // Botón de PDF por fila: siempre descarga directo, sin intentar el share
+  // sheet — para eso ya está el botón de WhatsApp/compartir. Así cada botón
+  // hace una sola cosa clara, sin comportamientos que se pisen entre sí.
+  function downloadClientPDF(client) {
+    try {
+      const doc = buildClientPDF(client, currentFechaReporte());
+      const fname = `Cartera_${slug(client.cliente)}_${client.cc || "SC"}.pdf`;
+      doc.save(fname);
     } catch (e) {
       console.error(e);
       toast("No se pudo generar el PDF de " + client.cliente + ".", true);
