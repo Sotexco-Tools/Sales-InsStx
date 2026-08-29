@@ -1561,7 +1561,7 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
       });
     }
 
-    await shareOrDownloadPDF(doc, `Resumen_Gestion_Semana_${todayISO()}.pdf`);
+    await shareOrDownloadPDF(doc, `Resumen_Gestion_Semana_${todayISO()}.pdf`, "Resumen semanal de gestión de cobro");
   }
 
   // ---------------------------------------------------------------------
@@ -2099,18 +2099,13 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
   // link real). En computador, o si el navegador no lo soporta, cae
   // automáticamente en la descarga de siempre — no rompe nada.
   // ---------------------------------------------------------------------
-  // Nota importante: cuando se comparte un archivo, NO se le agrega "title"
-  // ni "text" junto con "files" — en iOS/Safari eso hace que a veces se
-  // filtre la referencia interna del archivo (una URL tipo "blob:...") como
-  // si fuera un link de verdad, mezclado con el PDF. Compartiendo solo el
-  // archivo, ese problema no aparece.
-  async function shareOrDownloadBlob(blob, filename, mimeType) {
+  async function shareOrDownloadBlob(blob, filename, mimeType, shareTitle, shareText) {
     let motivoFallback = "";
     try {
       if (navigator.canShare) {
         const file = new File([blob], filename, { type: mimeType });
         if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file] });
+          await navigator.share({ files: [file], title: shareTitle, text: shareText || undefined });
           return true;
         }
         motivoFallback = "este navegador no admite compartir este tipo de archivo";
@@ -2134,15 +2129,15 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
     return true;
   }
 
-  async function shareOrDownloadPDF(doc, filename) {
-    return shareOrDownloadBlob(doc.output("blob"), filename, "application/pdf");
+  async function shareOrDownloadPDF(doc, filename, shareTitle, shareText) {
+    return shareOrDownloadBlob(doc.output("blob"), filename, "application/pdf", shareTitle, shareText);
   }
 
   async function generateSinglePDF(client) {
     try {
       const doc = buildClientPDF(client, currentFechaReporte());
       const fname = `Cartera_${slug(client.cliente)}_${client.cc || "SC"}.pdf`;
-      await shareOrDownloadPDF(doc, fname);
+      await shareOrDownloadPDF(doc, fname, `Estado de cartera - ${client.cliente}`);
     } catch (e) {
       console.error(e);
       toast("No se pudo generar el PDF de " + client.cliente + ".", true);
@@ -2153,11 +2148,6 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
   // PDF se comparte ya adjunto — el vendedor solo elige WhatsApp y el chat
   // del cliente. En computador, o si no hay soporte, cae en lo de siempre:
   // descargar el PDF y abrir la conversación para adjuntarlo a mano.
-  //
-  // Importante: al compartir el archivo NO se le agrega "title" ni "text"
-  // (ver nota en shareOrDownloadBlob) — así que el mensaje para el cliente
-  // se copia al portapapeles en su lugar, para que el vendedor solo tenga
-  // que pegarlo en la conversación después de adjuntar el PDF.
   async function shareToWhatsAppOrFallback(client, mensaje, waLink) {
     let doc;
     try {
@@ -2179,13 +2169,8 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
       if (navigator.canShare) {
         const file = new File([blob], fname, { type: "application/pdf" });
         if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file] });
-          try {
-            await navigator.clipboard.writeText(mensaje);
-            toast(`Elige WhatsApp y el chat de ${client.cliente}. Ya copiamos el mensaje — solo pégalo (mantén presionado el campo de texto → Pegar).`);
-          } catch (e) {
-            toast(`Elige WhatsApp y el chat de ${client.cliente} para enviar el PDF.`);
-          }
+          await navigator.share({ files: [file], title: `Estado de cartera - ${client.cliente}`, text: mensaje });
+          toast(`Elige WhatsApp y el chat de ${client.cliente} para enviarlo — ya va con el PDF adjunto.`);
           return;
         }
         motivoFallback = "este navegador no admite compartir un PDF";
@@ -2244,7 +2229,13 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
       }
       btn.textContent = "Comprimiendo...";
       const zipBlob = await zip.generateAsync({ type: "blob" });
-      await shareOrDownloadBlob(zipBlob, `Carteras_${todayISO()}.zip`, "application/zip");
+      await shareOrDownloadBlob(
+        zipBlob,
+        `Carteras_${todayISO()}.zip`,
+        "application/zip",
+        "Estados de cartera",
+        `Estados de cartera de ${list.length} clientes`
+      );
 
       toast(`Se generaron ${list.length} PDF en un archivo ZIP.`);
     } catch (e) {
