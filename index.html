@@ -1260,7 +1260,7 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
         <td class="row-actions">
           <button class="btn btn-row-gestion" title="Gestión de cobro">${gestionIcon()}</button>
           <button class="btn btn-row-pdf" data-key="${escapeHtml(key)}" title="Descargar PDF">${printerIcon()}</button>
-          <button class="btn btn-row-wa" ${waLink ? "" : "disabled"} title="${waLink ? "Compartir por WhatsApp" : "Sin celular válido en el archivo"}">${waIcon()}</button>
+          <button class="btn btn-row-wa" title="Compartir por WhatsApp">${waIcon()}</button>
         </td>
       `;
       tr.addEventListener("click", (ev) => {
@@ -1279,7 +1279,6 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
       const waBtn = tr.querySelector(".btn-row-wa");
       waBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        if (!waLink) return;
         shareToWhatsAppOrFallback(c, buildWhatsAppMessage(c), waLink);
       });
       tbody.appendChild(tr);
@@ -2191,8 +2190,12 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
       // librería), igual abrimos WhatsApp — mejor eso que dejar al
       // vendedor sin poder escribirle al cliente por este error aparte.
       console.error(e);
-      window.open(waLink, "_blank");
-      toast(`No se pudo generar el PDF de ${client.cliente}, pero se abrió WhatsApp.`, true);
+      if (waLink) {
+        window.open(waLink, "_blank");
+        toast(`No se pudo generar el PDF de ${client.cliente}, pero se abrió WhatsApp.`, true);
+      } else {
+        toast(`No se pudo generar el PDF de ${client.cliente}.`, true);
+      }
       return;
     }
     const fname = `Cartera_${slug(client.cliente)}_${client.cc || "SC"}.pdf`;
@@ -2233,6 +2236,8 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
     }
 
     // Fallback: computador, o navegador sin soporte de share con archivos.
+    // Si no hay un teléfono válido en el archivo, no hay a qué chat abrir —
+    // se descarga igual el PDF para que se pueda mandar manualmente.
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -2241,8 +2246,12 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    window.open(waLink, "_blank");
-    toast(`Se descargó el PDF de ${client.cliente} y se abrió WhatsApp (${motivoFallback}). Adjúntalo en la conversación.`, true);
+    if (waLink) {
+      window.open(waLink, "_blank");
+      toast(`Se descargó el PDF de ${client.cliente} y se abrió WhatsApp (${motivoFallback}). Adjúntalo en la conversación.`, true);
+    } else {
+      toast(`Se descargó el PDF de ${client.cliente} (${motivoFallback}). No hay un teléfono válido para abrir su chat directamente.`, true);
+    }
   }
 
   async function generateAllVisiblePDFs() {
