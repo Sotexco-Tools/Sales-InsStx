@@ -258,17 +258,20 @@
   }
   .btn-row-gestion:hover{background:var(--ink);color:#fff;border-color:var(--ink);}
 
-  /* ---------- Panel de recordatorios ---------- */
+  /* ---------- Panel de recordatorios (cajón lateral) ---------- */
   #recordatorios-overlay{
-    display:none;position:fixed;inset:0;background:rgba(15,23,42,.6);
-    align-items:center;justify-content:center;z-index:100;padding:20px;
+    display:none;position:fixed;inset:0;background:rgba(15,23,42,0);
+    z-index:100;transition:background .25s ease;
   }
+  #recordatorios-overlay.open{background:rgba(15,23,42,.45);}
   #recordatorios-card{
-    background:var(--card);border-radius:16px;padding:28px;max-width:520px;width:100%;
-    max-height:82vh;overflow-y:auto;
-    box-shadow:0 20px 60px rgba(0,0,0,.3);
+    position:fixed;top:0;right:0;height:100vh;width:420px;max-width:92vw;
+    background:var(--card);padding:24px 22px;overflow-y:auto;
+    box-shadow:-12px 0 40px rgba(0,0,0,.18);
+    transform:translateX(100%);transition:transform .28s ease;
   }
-  #recordatorios-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+  #recordatorios-overlay.open #recordatorios-card{transform:translateX(0);}
+  #recordatorios-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border);}
   #recordatorios-card-head h2{margin:0;font-size:18px;}
   #recordatorios-close{cursor:pointer;font-size:22px;line-height:1;color:var(--text-muted);padding:2px 4px;}
   #recordatorios-close:hover{color:var(--ink);}
@@ -1130,6 +1133,21 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
     return Math.round((h0 - f0) / 86400000);
   }
 
+  // Lunes (00:00) de la semana calendario de la fecha dada — la semana de
+  // seguimiento cierra de lunes a domingo, no son "últimos 7 días corridos".
+  function inicioSemana(d = new Date()) {
+    const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const dow = date.getDay(); // 0=domingo, 1=lunes, ... 6=sábado
+    const diff = dow === 0 ? -6 : 1 - dow;
+    date.setDate(date.getDate() + diff);
+    return date;
+  }
+  function finSemana(d = new Date()) {
+    const fin = inicioSemana(d);
+    fin.setDate(fin.getDate() + 6);
+    return fin;
+  }
+
   // Calcula automáticamente el estado de gestión de un cliente a partir
   // de la fecha de su última entrada en el historial — nada de esto lo
   // elige el vendedor a mano.
@@ -1145,11 +1163,14 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
     return { label: `Sin contacto hace ${dias}d`, color: "#b45309", bg: "#fffbeb", diasDesde: dias };
   }
 
+  // Seguimiento de la semana ACTUAL (lunes a domingo) — no "últimos 7 días
+  // corridos". Si hoy es lunes, la ventana recién empieza; si es domingo,
+  // cubre toda la semana.
   function fueGestionadoEstaSemana(nit) {
     const g = getGestion(nit);
     if (!g.historial || g.historial.length === 0) return false;
-    const ultima = g.historial[g.historial.length - 1].fecha;
-    return diffEnDias(ultima) <= 7;
+    const ultima = new Date(g.historial[g.historial.length - 1].fecha);
+    return ultima >= inicioSemana();
   }
 
   // "aldia" se resuelve después de agrupar por cliente (renderTable), ya
@@ -1375,19 +1396,19 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
       toast("No se pudo cargar la librería de PDF. Verifica tu conexión a internet.", true);
       return;
     }
+    const inicioSem = inicioSemana();
     const store = loadGestionStore();
     const filas = [];
     for (const nit of Object.keys(store)) {
       const rec = store[nit];
       for (const h of rec.historial || []) {
-        const dias = diffEnDias(h.fecha);
-        if (dias >= 0 && dias <= 7) {
+        if (new Date(h.fecha) >= inicioSem) {
           filas.push({ nit, cliente: rec.cliente || "", fecha: h.fecha, nota: h.nota || "", recordatorio: h.recordatorio || "", vendedor: h.vendedor || "" });
         }
       }
     }
     if (filas.length === 0) {
-      toast("No hay ninguna gestión registrada en los últimos 7 días.", true);
+      toast("No hay ninguna gestión registrada esta semana (desde el lunes).", true);
       return;
     }
     filas.sort((a, b) => b.fecha.localeCompare(a.fecha));
@@ -1445,9 +1466,8 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10.5);
     doc.setTextColor(...COLOR.grayText);
-    const hace7 = new Date();
-    hace7.setDate(hace7.getDate() - 7);
-    doc.text(`Del ${fmtDate(hace7)} al ${fmtDate(new Date())}  ·  Inssumos Sotexco`, marginX + 92, y + 44);
+    const finSem = finSemana();
+    doc.text(`Del ${fmtDate(inicioSem)} al ${fmtDate(finSem)} (lunes a domingo)  ·  Inssumos Sotexco`, marginX + 92, y + 44);
     if (activeVendedor) {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
@@ -1658,7 +1678,7 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
   // Panel de recordatorios — junta, entre todos los clientes visibles, los
   // que tienen un recordatorio de cobro para hoy o ya vencido (sin marcar).
   // ---------------------------------------------------------------------
-  function openRecordatoriosPanel() {
+  function renderRecordatoriosList() {
     const hoyISO = todayISO();
     const items = clients
       .map((c) => {
@@ -1702,7 +1722,7 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
           clearRecordatorio(key);
           toast(`Recordatorio quitado para ${cliente}.`);
           renderTable();
-          openRecordatoriosPanel();
+          renderRecordatoriosList();
         });
       });
       container.querySelectorAll(".recordatorio-item").forEach((el) => {
@@ -1716,11 +1736,22 @@ const LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApIAAAJWCAY
         });
       });
     }
-    document.getElementById("recordatorios-overlay").style.display = "flex";
+  }
+
+  function openRecordatoriosPanel() {
+    renderRecordatoriosList();
+    const overlay = document.getElementById("recordatorios-overlay");
+    overlay.style.display = "block";
+    // Dos frames para asegurar que el navegador ya pintó el estado inicial
+    // (translateX 100%) antes de agregar la clase que dispara la animación
+    // de deslizamiento — si no, a veces no se ve el movimiento.
+    requestAnimationFrame(() => requestAnimationFrame(() => overlay.classList.add("open")));
   }
 
   function closeRecordatoriosPanel() {
-    document.getElementById("recordatorios-overlay").style.display = "none";
+    const overlay = document.getElementById("recordatorios-overlay");
+    overlay.classList.remove("open");
+    setTimeout(() => { overlay.style.display = "none"; }, 280);
   }
 
   // Exporta la gestión como un Excel normal (una fila por cada gestión
